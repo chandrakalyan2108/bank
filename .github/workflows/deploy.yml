@@ -57,19 +57,10 @@ jobs:
   deploy-to-ec2:
     needs: build-and-push
     runs-on: ubuntu-latest
-    # If EC2_HOST / EC2_USER / EC2_SSH_KEY are stored under a GitHub
-    # "Environment" (Settings > Environments) rather than as plain
-    # repository secrets, this job MUST declare that environment or
-    # every secrets.* reference below silently resolves to an empty
-    # string. Uncomment and set the correct name if that's your setup:
-    # environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # One-time diagnostic: prints whether the secrets are actually
-      # reaching this job, without ever printing the private key itself.
-      # Safe to leave in, or delete once deploys are confirmed working.
       - name: Debug secret values
         run: |
           echo "HOST=[$EC2_HOST]"
@@ -82,11 +73,6 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
-      # Diagnostic step: proves whether the key/host/user actually work
-      # from a GitHub-hosted runner, independent of appleboy/ssh-action.
-      # Uses env vars (not direct ${{ }} interpolation in the run: line)
-      # so a malformed/empty secret fails loudly with a clear error
-      # instead of producing a garbled ssh command line.
       - name: Test SSH connectivity (diagnostic)
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
@@ -95,9 +81,6 @@ jobs:
         run: |
           if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ]; then
             echo "ERROR: one or more required secrets are empty."
-            echo "EC2_HOST empty: $([ -z "$EC2_HOST" ] && echo yes || echo no)"
-            echo "EC2_USER empty: $([ -z "$EC2_USER" ] && echo yes || echo no)"
-            echo "EC2_SSH_KEY empty: $([ -z "$EC2_SSH_KEY" ] && echo yes || echo no)"
             exit 1
           fi
           mkdir -p ~/.ssh
@@ -153,6 +136,14 @@ jobs:
             export AWS_ACCESS_KEY_ID=$(echo "$AWS_ACCESS_KEY_ID" | xargs)
             export AWS_SECRET_ACCESS_KEY=$(echo "$AWS_SECRET_ACCESS_KEY" | xargs)
             export AWS_DEFAULT_REGION=$(echo "$AWS_DEFAULT_REGION" | xargs)
+            export ECR_REGISTRY=$(echo "$ECR_REGISTRY" | xargs)
+            export IMAGE_TAG=$(echo "$IMAGE_TAG" | xargs)
+
+            # Check for critical variables
+            if [ -z "$ECR_REGISTRY" ]; then
+              echo "ERROR: ECR_REGISTRY is empty!"
+              exit 1
+            fi
 
             # Install AWS CLI if not present
             if ! command -v aws &> /dev/null; then
@@ -180,17 +171,14 @@ jobs:
             JWT_SECRET=$JWT_SECRET
             EOF
 
-            # Ensure clean docker config to avoid stale/malformed auth entries
-            # (fixes "malformed HTTP Authorization header" errors on pulls,
-            # e.g. for public images like mysql:8 that need no auth at all)
+            # Clean stale docker config
             mkdir -p ~/.docker
             rm -f ~/.docker/config.json
 
-            # Login to ECR
-            aws ecr get-login-password --region "$AWS_DEFAULT_REGION" \
-              | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+            # Authenticate with AWS ECR
+            aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
-            # Pull and restart containers
+            # Pull latest containers and run
             docker-compose -f docker-compose.prod.yml pull
             docker-compose -f docker-compose.prod.yml up -d
             docker image prune --force
