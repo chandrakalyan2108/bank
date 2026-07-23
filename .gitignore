@@ -1,0 +1,26 @@
+# Backend
+backend/target/
+backend/.mvn/
+*.class
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+
+# Terraform
+infrastructure/terraform/.terraform/
+infrastructure/terraform/*.tfstate
+infrastructure/terraform/*.tfstate.backup
+infrastructure/terraform/.terraform.lock.hcl
+infrastructure/terraform/terraform.tfvars
+
+# Env / secrets
+.env
+*.pem
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.log
