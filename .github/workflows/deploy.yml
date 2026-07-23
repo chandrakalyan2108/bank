@@ -180,6 +180,12 @@ jobs:
             JWT_SECRET=$JWT_SECRET
             EOF
 
+            # Ensure clean docker config to avoid stale/malformed auth entries
+            # (fixes "malformed HTTP Authorization header" errors on pulls,
+            # e.g. for public images like mysql:8 that need no auth at all)
+            mkdir -p ~/.docker
+            rm -f ~/.docker/config.json
+
             # Login to ECR
             aws ecr get-login-password --region "$AWS_DEFAULT_REGION" \
               | docker login --username AWS --password-stdin "$ECR_REGISTRY"
