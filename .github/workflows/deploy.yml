@@ -57,21 +57,54 @@ jobs:
   deploy-to-ec2:
     needs: build-and-push
     runs-on: ubuntu-latest
+    # If EC2_HOST / EC2_USER / EC2_SSH_KEY are stored under a GitHub
+    # "Environment" (Settings > Environments) rather than as plain
+    # repository secrets, this job MUST declare that environment or
+    # every secrets.* reference below silently resolves to an empty
+    # string. Uncomment and set the correct name if that's your setup:
+    # environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # One-time diagnostic: prints whether the secrets are actually
+      # reaching this job, without ever printing the private key itself.
+      # Safe to leave in, or delete once deploys are confirmed working.
+      - name: Debug secret values
+        run: |
+          echo "HOST=[$EC2_HOST]"
+          echo "USER=[$EC2_USER]"
+          echo "HOST length: ${#EC2_HOST}"
+          echo "USER length: ${#EC2_USER}"
+          echo "KEY is set: $([ -n "$EC2_SSH_KEY" ] && echo yes || echo no)"
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+
       # Diagnostic step: proves whether the key/host/user actually work
       # from a GitHub-hosted runner, independent of appleboy/ssh-action.
-      # Remove this once deploys are working reliably if you don't want
-      # the extra step in every run.
+      # Uses env vars (not direct ${{ }} interpolation in the run: line)
+      # so a malformed/empty secret fails loudly with a clear error
+      # instead of producing a garbled ssh command line.
       - name: Test SSH connectivity (diagnostic)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
+          if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ]; then
+            echo "ERROR: one or more required secrets are empty."
+            echo "EC2_HOST empty: $([ -z "$EC2_HOST" ] && echo yes || echo no)"
+            echo "EC2_USER empty: $([ -z "$EC2_USER" ] && echo yes || echo no)"
+            echo "EC2_SSH_KEY empty: $([ -z "$EC2_SSH_KEY" ] && echo yes || echo no)"
+            exit 1
+          fi
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -vvv \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo connected successfully"
+            "$EC2_USER@$EC2_HOST" "echo connected successfully"
 
       - name: Ensure deploy directory exists with correct ownership
         uses: appleboy/ssh-action@v1.0.3
