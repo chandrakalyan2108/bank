@@ -61,12 +61,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH key
+      # Diagnostic step: proves whether the key/host/user actually work
+      # from a GitHub-hosted runner, independent of appleboy/ssh-action.
+      # Remove this once deploys are working reliably if you don't want
+      # the extra step in every run.
+      - name: Test SSH connectivity (diagnostic)
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -vvv \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo connected successfully"
 
       - name: Ensure deploy directory exists with correct ownership
         uses: appleboy/ssh-action@v1.0.3
@@ -74,6 +79,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          debug: true
           script_stop: true
           script: |
             sudo mkdir -p /opt/banking-application
@@ -104,6 +110,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_DEFAULT_REGION,ECR_REGISTRY,IMAGE_TAG,DB_ROOT_PASSWORD,JWT_SECRET
+          debug: true
           script_stop: true
           script: |
             set -e
